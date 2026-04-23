@@ -1,9 +1,7 @@
-import base64
 import math
 import time
 from collections import deque
 from datetime import datetime
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -16,10 +14,6 @@ import streamlit.components.v1 as components
 # CONFIG
 # =========================
 API_BASE = "https://satpi-backend.onrender.com"
-
-ASSETS_DIR = Path(__file__).parent / "assets"
-SATPI_LOGO = ASSETS_DIR / "satpi_logo.png"
-INSTITUT_LOGO = ASSETS_DIR / "institut_logo.png"
 
 MAX_HISTORIAL = 300
 REFRESH_SECONDS = 1
@@ -35,9 +29,20 @@ MAP_MOVE_THRESHOLD_METERS = 15.0
 MAP_FORCE_REFRESH_SECONDS = 30
 
 TAULA_COLUMNS = [
-    "temps", "alt", "alt_suav", "altura_guanyada", "altura_maxima_total",
-    "temp", "press", "lat", "lon", "rssi", "servoX", "servoY",
-    "vel_calc", "vel_lineal_calc"
+    "temps_txt",
+    "temps",
+    "lat",
+    "lon",
+    "alt",
+    "alt_press",
+    "alt_suav",
+    "altura_guanyada",
+    "altura_maxima_total",
+    "vel",
+    "vel_calc",
+    "vel_lineal_calc",
+    "temp",
+    "press",
 ]
 
 PLOTLY_CONFIG = {
@@ -51,68 +56,11 @@ PLOTLY_CONFIG = {
 # UI BASE
 # =========================
 st.set_page_config(page_title="Estació de terra", layout="wide")
+st.title("Estació de terra Bernat el Ferrer - Satpi")
 
 st.markdown(
     """
     <style>
-    .block-container {
-        padding-top: 1rem;
-    }
-
-    [data-testid="stHorizontalBlock"] {
-        align-items: center;
-    }
-
-    .header-logo-box {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        height: 130px;
-    }
-
-    .header-logo-img {
-        display: block;
-        width: auto;
-        height: auto;
-        object-fit: contain;
-    }
-
-    .institut-logo {
-        max-width: 230px;
-        max-height: 90px;
-    }
-
-    .satpi-logo {
-        max-width: 120px;
-        max-height: 120px;
-    }
-
-    .top-header {
-        background: linear-gradient(135deg, rgba(16,31,49,0.95), rgba(10,22,36,0.95));
-        border: 1px solid rgba(255,255,255,0.08);
-        border-radius: 18px;
-        padding: 22px 26px 18px 26px;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.18);
-        min-height: 130px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-    }
-
-    .top-header-title {
-        font-size: 2.35rem;
-        font-weight: 800;
-        line-height: 1.1;
-        color: white;
-        margin-bottom: 8px;
-    }
-
-    .top-header-subtitle {
-        font-size: 1rem;
-        color: rgba(255,255,255,0.80);
-        margin-bottom: 0;
-    }
-
     .info-card {
         background: #0f1724;
         border: 1px solid rgba(255,255,255,0.08);
@@ -146,79 +94,10 @@ st.markdown(
         border-radius: 16px;
         padding: 10px;
     }
-
-    @media (max-width: 900px) {
-        .top-header-title {
-            font-size: 1.7rem;
-        }
-
-        .institut-logo {
-            max-width: 170px;
-            max-height: 70px;
-        }
-
-        .satpi-logo {
-            max-width: 90px;
-            max-height: 90px;
-        }
-
-        .header-logo-box,
-        .top-header {
-            min-height: 100px;
-            height: 100px;
-        }
-    }
     </style>
     """,
     unsafe_allow_html=True,
 )
-
-
-def imatge_a_base64(path):
-    with open(path, "rb") as f:
-        return base64.b64encode(f.read()).decode("utf-8")
-
-
-def renderitzar_header():
-    col_left, col_center, col_right = st.columns([1.15, 4.2, 1.15], gap="medium")
-
-    with col_left:
-        if INSTITUT_LOGO.exists():
-            st.markdown(
-                f"""
-                <div class="header-logo-box">
-                    <img src="data:image/png;base64,{imatge_a_base64(INSTITUT_LOGO)}" class="header-logo-img institut-logo">
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-    with col_center:
-        st.markdown(
-            """
-            <div class="top-header">
-                <div class="top-header-title">Estació de terra SATPI26</div>
-                <div class="top-header-subtitle">
-                    Bernat el Ferrer · CanSat · Telemetria en temps real
-                </div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with col_right:
-        if SATPI_LOGO.exists():
-            st.markdown(
-                f"""
-                <div class="header-logo-box">
-                    <img src="data:image/png;base64,{imatge_a_base64(SATPI_LOGO)}" class="header-logo-img satpi-logo">
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-
-renderitzar_header()
 
 
 # =========================
@@ -275,15 +154,15 @@ def processar_lectura_api():
             return
 
         data = {
-            "temps": float(data["temps"]),
-            "alt": float(data["alt"]),
-            "temp": float(data["temp"]),
-            "press": float(data["press"]),
             "lat": float(data["lat"]),
             "lon": float(data["lon"]),
-            "rssi": float(data["rssi"]),
-            "servoX": int(data["servoX"]),
-            "servoY": int(data["servoY"]),
+            "alt": float(data["alt"]),
+            "vel": float(data["vel"]),
+            "temp": float(data["temp"]),
+            "press": float(data["press"]),
+            "alt_press": float(data["alt_press"]),
+            "temps_txt": str(data.get("temps_txt", "")),
+            "temps": float(data["temps"]),
         }
 
         if st.session_state.historial:
@@ -523,22 +402,6 @@ def calcular_moviment_i_velocitat_lineal(df):
     }
 
 
-def text_servo_x(valor):
-    if valor == 1:
-        return "➡️ Servo X: dreta"
-    if valor == -1:
-        return "⬅️ Servo X: esquerra"
-    return "⏺ Servo X: aturat"
-
-
-def text_servo_y(valor):
-    if valor == 1:
-        return "⬆️ Servo Y: amunt"
-    if valor == -1:
-        return "⬇️ Servo Y: avall"
-    return "⏺ Servo Y: aturat"
-
-
 # =========================
 # GRÀFIQUES
 # =========================
@@ -716,24 +579,26 @@ def renderitzar_bloc_gps_i_mapa(
         if gps is None:
             st.warning("No hi ha coordenades GPS vàlides.")
         else:
-            altura_llancament_txt = "pendent" if altura_base is None else f"{altura_base:.1f} m"
-
             html_info = f"""
             <div class="info-card">
                 <h3>Posició actual</h3>
                 <div class="info-grid">
+                    <div class="info-item"><b>Hora:</b> {dada['temps_txt']}</div>
+                    <div class="info-item"><b>Temps (s):</b> {dada['temps']:.1f}</div>
                     <div class="info-item"><b>Latitud:</b> {gps['lat']:.6f}</div>
                     <div class="info-item"><b>Longitud:</b> {gps['lon']:.6f}</div>
-                    <div class="info-item"><b>Temps:</b> {dada['temps']:.1f} s</div>
                     <div class="info-item"><b>Etapa:</b> {fase}</div>
                     <div class="info-item"><b>Altitud absoluta:</b> {dada['alt']:.1f} m</div>
+                    <div class="info-item"><b>Altitud per pressió:</b> {dada['alt_press']:.1f} m</div>
                     <div class="info-item"><b>Altura guanyada:</b> {altura_guanyada:.1f} m</div>
                     <div class="info-item"><b>Altura màxima total:</b> {altura_maxima_total:.1f} m</div>
+                    <div class="info-item"><b>Velocitat enviada:</b> {dada['vel']:.2f} m/s</div>
                     <div class="info-item"><b>Velocitat lineal:</b> {vel_lineal:.2f} m/s</div>
                     <div class="info-item"><b>Direcció:</b> {direccio_lineal}</div>
+                    <div class="info-item"><b>Temperatura:</b> {dada['temp']:.1f} °C</div>
+                    <div class="info-item"><b>Pressió:</b> {dada['press']:.1f} hPa</div>
                     <div class="info-item"><b>Temps aprox. aterratge:</b> {temps_aterratge_txt}</div>
-                    <div class="info-item"><b>Altura de llançament:</b> {altura_llancament_txt}</div>
-                    <div class="info-item"><b>RSSI:</b> {dada['rssi']:.1f} dBm</div>
+                    <div class="info-item"><b>Altura de llançament:</b> {"pendent" if altura_base is None else f"{altura_base:.1f} m"}</div>
                 </div>
             </div>
             """
@@ -765,34 +630,24 @@ def renderitzar_dashboard():
     temps_aterratge_txt = format_temps_aprox(temps_aterratge_s)
 
     m1, m2, m3, m4, m5, m6 = st.columns(6)
-    m1.metric("Temps", f"{dada['temps']:.1f} s")
+    m1.metric("Hora", dada["temps_txt"])
     m2.metric("Altitud", f"{dada['alt']:.1f} m")
-    m3.metric("Velocitat vertical", f"{vel_vertical:.2f} m/s")
-    m4.metric("Velocitat lineal", f"{vel_lineal:.2f} m/s")
-    m5.metric("Altura guanyada", f"{altura_guanyada:.1f} m")
+    m3.metric("Altitud pressió", f"{dada['alt_press']:.1f} m")
+    m4.metric("Velocitat enviada", f"{dada['vel']:.2f} m/s")
+    m5.metric("Velocitat vertical", f"{vel_vertical:.2f} m/s")
     m6.metric("Temps aprox. aterratge", temps_aterratge_txt)
 
     m7, m8, m9, m10 = st.columns(4)
     m7.metric("Altura màxima total", f"{altura_maxima_total:.1f} m")
-    m8.metric("Temperatura", f"{dada['temp']:.1f} °C")
-    m9.metric("Pressió", f"{dada['press']:.1f} hPa")
-    m10.metric("RSSI", f"{dada['rssi']:.1f} dBm")
+    m8.metric("Altura guanyada", f"{altura_guanyada:.1f} m")
+    m9.metric("Temperatura", f"{dada['temp']:.1f} °C")
+    m10.metric("Pressió", f"{dada['press']:.1f} hPa")
 
     col_estat, col_mov = st.columns(2)
 
     with col_estat:
         st.subheader("🛰️ Etapa de la missió")
         st.info(fase)
-
-        if dada["rssi"] < -95:
-            st.error("🔴 Senyal molt dèbil")
-        elif dada["rssi"] < -85:
-            st.warning("🟡 Senyal dèbil")
-        else:
-            st.success("🟢 Senyal OK")
-
-        st.info(text_servo_x(dada["servoX"]))
-        st.info(text_servo_y(dada["servoY"]))
 
     with col_mov:
         st.subheader("🧭 Moviment")
@@ -821,39 +676,45 @@ def renderitzar_dashboard():
             key="fig_alt",
         )
 
-        st.subheader("📊 Altres dades")
         a1, a2, a3 = st.columns(3)
         with a1:
+            st.plotly_chart(
+                mini_grafic(df, "alt_press", "Altitud per pressió"),
+                use_container_width=True,
+                config=PLOTLY_CONFIG,
+                key="fig_alt_press",
+            )
+        with a2:
             st.plotly_chart(
                 mini_grafic(df, "temp", "Temperatura"),
                 use_container_width=True,
                 config=PLOTLY_CONFIG,
                 key="fig_temp",
             )
-        with a2:
+        with a3:
             st.plotly_chart(
                 mini_grafic(df, "press", "Pressió"),
                 use_container_width=True,
                 config=PLOTLY_CONFIG,
                 key="fig_press",
             )
-        with a3:
+
+        b1, b2, b3 = st.columns(3)
+        with b1:
             st.plotly_chart(
-                mini_grafic(df, "rssi", "RSSI"),
+                mini_grafic(df, "vel", "Velocitat enviada"),
                 use_container_width=True,
                 config=PLOTLY_CONFIG,
-                key="fig_rssi",
+                key="fig_vel_real",
             )
-
-        b1, b2 = st.columns(2)
-        with b1:
+        with b2:
             st.plotly_chart(
                 mini_grafic(df, "vel_calc", "Velocitat vertical calculada"),
                 use_container_width=True,
                 config=PLOTLY_CONFIG,
-                key="fig_vel",
+                key="fig_vel_calc",
             )
-        with b2:
+        with b3:
             st.plotly_chart(
                 mini_grafic(df, "vel_lineal_calc", "Velocitat lineal"),
                 use_container_width=True,
