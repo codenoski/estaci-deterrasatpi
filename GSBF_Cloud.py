@@ -1,3 +1,4 @@
+import base64
 import math
 import time
 from collections import deque
@@ -55,20 +56,51 @@ st.markdown(
     """
     <style>
     .block-container {
-        padding-top: 1.2rem;
+        padding-top: 1rem;
+    }
+
+    [data-testid="stHorizontalBlock"] {
+        align-items: center;
+    }
+
+    .header-logo-box {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 130px;
+    }
+
+    .header-logo-img {
+        display: block;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+    }
+
+    .institut-logo {
+        max-width: 230px;
+        max-height: 90px;
+    }
+
+    .satpi-logo {
+        max-width: 120px;
+        max-height: 120px;
     }
 
     .top-header {
         background: linear-gradient(135deg, rgba(16,31,49,0.95), rgba(10,22,36,0.95));
         border: 1px solid rgba(255,255,255,0.08);
         border-radius: 18px;
-        padding: 22px 26px 16px 26px;
-        margin-bottom: 12px;
+        padding: 22px 26px 18px 26px;
         box-shadow: 0 10px 25px rgba(0,0,0,0.18);
+        min-height: 130px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
     }
 
     .top-header-title {
-        font-size: 2.2rem;
+        font-size: 2.35rem;
         font-weight: 800;
         line-height: 1.1;
         color: white;
@@ -77,8 +109,8 @@ st.markdown(
 
     .top-header-subtitle {
         font-size: 1rem;
-        color: rgba(255,255,255,0.78);
-        margin-bottom: 0.1rem;
+        color: rgba(255,255,255,0.80);
+        margin-bottom: 0;
     }
 
     .info-card {
@@ -114,20 +146,54 @@ st.markdown(
         border-radius: 16px;
         padding: 10px;
     }
+
+    @media (max-width: 900px) {
+        .top-header-title {
+            font-size: 1.7rem;
+        }
+
+        .institut-logo {
+            max-width: 170px;
+            max-height: 70px;
+        }
+
+        .satpi-logo {
+            max-width: 90px;
+            max-height: 90px;
+        }
+
+        .header-logo-box,
+        .top-header {
+            min-height: 100px;
+            height: 100px;
+        }
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 
+def imatge_a_base64(path):
+    with open(path, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
+
+
 def renderitzar_header():
-    col_logo, col_text = st.columns([1.1, 3.2], gap="medium")
+    col_left, col_center, col_right = st.columns([1.15, 4.2, 1.15], gap="medium")
 
-    with col_logo:
-        if SATPI_LOGO.exists():
-            st.image(str(SATPI_LOGO), use_container_width=True)
+    with col_left:
+        if INSTITUT_LOGO.exists():
+            st.markdown(
+                f"""
+                <div class="header-logo-box">
+                    <img src="data:image/png;base64,{imatge_a_base64(INSTITUT_LOGO)}" class="header-logo-img institut-logo">
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
-    with col_text:
+    with col_center:
         st.markdown(
             """
             <div class="top-header">
@@ -140,8 +206,16 @@ def renderitzar_header():
             unsafe_allow_html=True,
         )
 
-        if INSTITUT_LOGO.exists():
-            st.image(str(INSTITUT_LOGO), use_container_width=True)
+    with col_right:
+        if SATPI_LOGO.exists():
+            st.markdown(
+                f"""
+                <div class="header-logo-box">
+                    <img src="data:image/png;base64,{imatge_a_base64(SATPI_LOGO)}" class="header-logo-img satpi-logo">
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
 renderitzar_header()
@@ -642,6 +716,8 @@ def renderitzar_bloc_gps_i_mapa(
         if gps is None:
             st.warning("No hi ha coordenades GPS vàlides.")
         else:
+            altura_llancament_txt = "pendent" if altura_base is None else f"{altura_base:.1f} m"
+
             html_info = f"""
             <div class="info-card">
                 <h3>Posició actual</h3>
@@ -656,7 +732,7 @@ def renderitzar_bloc_gps_i_mapa(
                     <div class="info-item"><b>Velocitat lineal:</b> {vel_lineal:.2f} m/s</div>
                     <div class="info-item"><b>Direcció:</b> {direccio_lineal}</div>
                     <div class="info-item"><b>Temps aprox. aterratge:</b> {temps_aterratge_txt}</div>
-                    <div class="info-item"><b>Altura de llançament:</b> {"pendent" if altura_base is None else f"{altura_base:.1f} m"}</div>
+                    <div class="info-item"><b>Altura de llançament:</b> {altura_llancament_txt}</div>
                     <div class="info-item"><b>RSSI:</b> {dada['rssi']:.1f} dBm</div>
                 </div>
             </div>
