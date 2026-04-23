@@ -2,6 +2,7 @@ import math
 import time
 from collections import deque
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -14,6 +15,10 @@ import streamlit.components.v1 as components
 # CONFIG
 # =========================
 API_BASE = "https://satpi-backend.onrender.com"
+
+ASSETS_DIR = Path(__file__).parent / "assets"
+SATPI_LOGO = ASSETS_DIR / "satpi_logo.png"
+INSTITUT_LOGO = ASSETS_DIR / "institut_logo.png"
 
 MAX_HISTORIAL = 300
 REFRESH_SECONDS = 1
@@ -45,11 +50,37 @@ PLOTLY_CONFIG = {
 # UI BASE
 # =========================
 st.set_page_config(page_title="Estació de terra", layout="wide")
-st.title("Estació de terra Bernat el Ferrer - Satpi")
 
 st.markdown(
     """
     <style>
+    .block-container {
+        padding-top: 1.2rem;
+    }
+
+    .top-header {
+        background: linear-gradient(135deg, rgba(16,31,49,0.95), rgba(10,22,36,0.95));
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 18px;
+        padding: 22px 26px 16px 26px;
+        margin-bottom: 12px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.18);
+    }
+
+    .top-header-title {
+        font-size: 2.2rem;
+        font-weight: 800;
+        line-height: 1.1;
+        color: white;
+        margin-bottom: 8px;
+    }
+
+    .top-header-subtitle {
+        font-size: 1rem;
+        color: rgba(255,255,255,0.78);
+        margin-bottom: 0.1rem;
+    }
+
     .info-card {
         background: #0f1724;
         border: 1px solid rgba(255,255,255,0.08);
@@ -87,6 +118,33 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
+
+def renderitzar_header():
+    col_logo, col_text = st.columns([1.1, 3.2], gap="medium")
+
+    with col_logo:
+        if SATPI_LOGO.exists():
+            st.image(str(SATPI_LOGO), use_container_width=True)
+
+    with col_text:
+        st.markdown(
+            """
+            <div class="top-header">
+                <div class="top-header-title">Estació de terra SATPI26</div>
+                <div class="top-header-subtitle">
+                    Bernat el Ferrer · CanSat · Telemetria en temps real
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        if INSTITUT_LOGO.exists():
+            st.image(str(INSTITUT_LOGO), use_container_width=True)
+
+
+renderitzar_header()
 
 
 # =========================
