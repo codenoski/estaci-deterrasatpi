@@ -17,8 +17,8 @@ import streamlit.components.v1 as components
 # =========================
 API_BASE = "https://satpi-backend.onrender.com"
 
-MAX_HISTORIAL = 300
-REFRESH_SECONDS = 1
+MAX_HISTORIAL = 50
+REFRESH_SECONDS = 5
 
 SMOOTH_WINDOW = 5
 ASCENS_CONFIRM_POINTS = 4
