@@ -1,7 +1,9 @@
+import base64
 import math
 import time
 from collections import deque
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -43,6 +45,10 @@ TAULA_COLUMNS = [
     "vel_lineal_calc",
     "temp",
     "press",
+    "retard_s",
+    "camX",
+    "camY",
+    "pc_rebut_ts",
 ]
 
 PLOTLY_CONFIG = {
@@ -56,11 +62,126 @@ PLOTLY_CONFIG = {
 # UI BASE
 # =========================
 st.set_page_config(page_title="Estació de terra", layout="wide")
-st.title("Estació de terra Bernat el Ferrer - Satpi")
+
+# assets al repo (normalment al costat del script). Fallback si el layout canvia.
+ASSETS_DIR = Path(__file__).parent / "assets"
+if not ASSETS_DIR.exists():
+    ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets"
+
+SATPI_LOGO = ASSETS_DIR / "satpi_logo.png"
+INSTITUT_LOGO = ASSETS_DIR / "institut_logo.png"
+
+
+def imatge_a_base64(path: Path):
+    try:
+        return base64.b64encode(path.read_bytes()).decode("utf-8")
+    except Exception:
+        return None
 
 st.markdown(
     """
     <style>
+    :root {
+        --bg-main: #040b18;
+        --bg-soft: #091529;
+        --card-bg: rgba(10, 23, 43, 0.82);
+        --card-border: rgba(119, 170, 255, 0.16);
+        --text-main: #f8fbff;
+        --text-soft: #aac0dc;
+        --shadow: 0 12px 32px rgba(0,0,0,0.28);
+    }
+
+    .stApp {
+        background:
+            radial-gradient(circle at top left, rgba(40,85,160,0.18), transparent 32%),
+            radial-gradient(circle at top right, rgba(0,170,220,0.10), transparent 28%),
+            linear-gradient(180deg, #030814 0%, #07111f 55%, #040a14 100%);
+    }
+
+    .block-container {
+        padding-top: 0.8rem;
+        padding-bottom: 1.3rem;
+        max-width: none;
+    }
+
+    /* HEADER */
+    .header-shell {
+        margin-bottom: 1.1rem;
+    }
+
+    .header-logo-box {
+        height: 122px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 22px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.015));
+        border: 1px solid rgba(255,255,255,0.05);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(10px);
+    }
+
+    .header-logo-img {
+        display: block;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        filter: drop-shadow(0 3px 10px rgba(0,0,0,0.22));
+    }
+
+    .institut-logo {
+        max-width: 220px;
+        max-height: 76px;
+    }
+
+    .satpi-logo {
+        max-width: 92px;
+        max-height: 92px;
+    }
+
+    .top-header {
+        min-height: 122px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 20px 30px;
+        border-radius: 24px;
+        background:
+            linear-gradient(135deg, rgba(14,29,52,0.96), rgba(4,29,54,0.96)),
+            linear-gradient(90deg, rgba(86,182,255,0.10), rgba(124,227,200,0.06));
+        border: 1px solid rgba(130,180,255,0.14);
+        box-shadow: var(--shadow);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .top-header::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+            radial-gradient(circle at 18% 50%, rgba(86,182,255,0.12), transparent 26%),
+            radial-gradient(circle at 82% 35%, rgba(124,227,200,0.08), transparent 22%);
+        pointer-events: none;
+    }
+
+    .top-header-title {
+        position: relative;
+        font-size: 2.55rem;
+        font-weight: 800;
+        line-height: 1.02;
+        letter-spacing: -0.03em;
+        color: var(--text-main);
+        margin-bottom: 10px;
+    }
+
+    .top-header-subtitle {
+        position: relative;
+        font-size: 1.02rem;
+        color: var(--text-soft);
+        letter-spacing: 0.01em;
+    }
+
     .info-card {
         background: #0f1724;
         border: 1px solid rgba(255,255,255,0.08);
@@ -94,10 +215,72 @@ st.markdown(
         border-radius: 16px;
         padding: 10px;
     }
+
+    @media (max-width: 1100px) {
+        .top-header-title { font-size: 2rem; }
+        .top-header-subtitle { font-size: 0.95rem; }
+        .institut-logo { max-width: 180px; max-height: 62px; }
+        .satpi-logo { max-width: 82px; max-height: 82px; }
+    }
+
+    @media (max-width: 900px) {
+        .top-header-title { font-size: 1.55rem; }
+        .header-logo-box, .top-header { min-height: 100px; height: 100px; }
+    }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+
+def renderitzar_header():
+    st.markdown('<div class="header-shell">', unsafe_allow_html=True)
+
+    col_left, col_center, col_right = st.columns([1.25, 4.9, 1.25], gap="medium")
+
+    with col_left:
+        b64 = imatge_a_base64(INSTITUT_LOGO) if INSTITUT_LOGO.exists() else None
+        if b64:
+            st.markdown(
+                f"""
+                <div class="header-logo-box">
+                    <img src="data:image/png;base64,{b64}"
+                         class="header-logo-img institut-logo">
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    with col_center:
+        st.markdown(
+            """
+            <div class="top-header">
+                <div class="top-header-title">Estació de terra SATPI26</div>
+                <div class="top-header-subtitle">
+                    Institut Bernat el Ferrer · CanSat · Telemetria en temps real
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    with col_right:
+        b64 = imatge_a_base64(SATPI_LOGO) if SATPI_LOGO.exists() else None
+        if b64:
+            st.markdown(
+                f"""
+                <div class="header-logo-box">
+                    <img src="data:image/png;base64,{b64}"
+                         class="header-logo-img satpi-logo">
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+renderitzar_header()
 
 
 # =========================
@@ -163,6 +346,9 @@ def processar_lectura_api():
             "alt_press": float(data["alt_press"]),
             "temps_txt": str(data.get("temps_txt", "")),
             "temps": float(data["temps"]),
+            "camX": str(data.get("camX", "center")),
+            "camY": str(data.get("camY", "center")),
+            "pc_rebut_ts": float(data["pc_rebut_ts"]) if data.get("pc_rebut_ts") is not None else None,
         }
 
         if st.session_state.historial:
@@ -185,6 +371,14 @@ def processar_lectura_api():
 
     except Exception as e:
         st.warning(f"No s'han pogut llegir dades del backend: {e}")
+
+
+def calcular_retard_segons(pc_rebut_ts):
+    try:
+        pc_rebut_ts = float(pc_rebut_ts)
+    except Exception:
+        return None
+    return max(0.0, time.time() - pc_rebut_ts)
 
 
 # =========================
@@ -614,8 +808,19 @@ def renderitzar_dashboard():
         return
 
     df = pd.DataFrame(st.session_state.historial)
+    if "camX" not in df.columns:
+        df["camX"] = "0"
+    if "camY" not in df.columns:
+        df["camY"] = "0"
+    if "pc_rebut_ts" not in df.columns:
+        df["pc_rebut_ts"] = np.nan
+    if "retard_s" not in df.columns:
+        df["retard_s"] = 0.0
     df, altura_base = afegir_variables_altura(df)
 
+    dada = df.iloc[-1]
+    retard = calcular_retard_segons(dada.get("pc_rebut_ts"))
+    df.loc[df.index[-1], "retard_s"] = float(retard) if retard is not None else 0.0
     dada = df.iloc[-1]
     fase = obtenir_fase_intelligent(df)
     vel_vertical = calcular_velocitat_vertical(df)
@@ -631,7 +836,7 @@ def renderitzar_dashboard():
 
     m1, m2, m3, m4, m5, m6 = st.columns(6)
     m1.metric("Hora", dada["temps_txt"])
-    m2.metric("Altitud", f"{dada['alt']:.1f} m")
+    m2.metric("Retard", f"{dada['retard_s']:.0f} s")
     m3.metric("Altitud pressió", f"{dada['alt_press']:.1f} m")
     m4.metric("Velocitat enviada", f"{dada['vel']:.2f} m/s")
     m5.metric("Velocitat vertical", f"{vel_vertical:.2f} m/s")
@@ -648,6 +853,30 @@ def renderitzar_dashboard():
     with col_estat:
         st.subheader("🛰️ Etapa de la missió")
         st.info(fase)
+
+        camx = str(dada.get("camX", "center")).strip().lower()
+        camy = str(dada.get("camY", "center")).strip().lower()
+
+        cam_map = {
+            "left": ("⬅️", "left"),
+            "right": ("➡️", "right"),
+            "center": ("⏺", "center"),
+            "up": ("⬆️", "up"),
+            "down": ("⬇️", "down"),
+        }
+
+        camx_icon, camx_txt = cam_map.get(camx, ("⏺", "center"))
+        camy_icon, camy_txt = cam_map.get(camy, ("⏺", "center"))
+
+        if float(dada["retard_s"]) <= 3:
+            st.success(f"Dades en temps real: retard aproximat {dada['retard_s']:.0f} s")
+        elif float(dada["retard_s"]) <= 10:
+            st.warning(f"Petit retard: {dada['retard_s']:.0f} s")
+        else:
+            st.error(f"Retard important: {dada['retard_s']:.0f} s")
+
+        st.info(f"Càmera X: {camx_icon} {camx_txt}")
+        st.info(f"Càmera Y: {camy_icon} {camy_txt}")
 
     with col_mov:
         st.subheader("🧭 Moviment")
