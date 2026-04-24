@@ -852,6 +852,9 @@ def renderitzar_dashboard():
     m9.metric("Temperatura", f"{dada['temp']:.1f} °C")
     m10.metric("Pressió", f"{dada['press']:.1f} hPa")
 
+    # Mostra també com a mètrica (a dalt), sense treure res de la UI
+    st.metric("Temps aprox. aterratge", temps_aterratge_txt)
+
     col_estat, col_mov = st.columns(2)
 
     with col_estat:
