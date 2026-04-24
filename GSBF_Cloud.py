@@ -472,7 +472,7 @@ def calcular_velocitat_vertical(df):
 
 
 def calcular_temps_aprox_aterratge(df, altura_guanyada, fase):
-    if fase != "🪂 Descens" or altura_guanyada <= 0 or len(df) < 5:
+    if fase != "Descens" or altura_guanyada <= 0 or len(df) < 5:
         return None
 
     vels = df["vel_calc"].tail(8)
@@ -505,7 +505,7 @@ def format_temps_aprox(segons):
 
 def obtenir_fase_intelligent(df):
     if len(df) < 6 or st.session_state.altura_base is None:
-        return "⏳ Esperant enlairament"
+        return "Esperant enlairament"
 
     diffs_alt = df.tail(6)["alt_suav"].diff().dropna()
     avg_diff = diffs_alt.mean()
@@ -517,11 +517,11 @@ def obtenir_fase_intelligent(df):
     th_descens = -0.8
 
     if avg_diff > th_ascens:
-        return "🚀 Ascens"
+        return "Ascens"
 
     if avg_diff < th_descens:
         st.session_state.ha_descendit = True
-        return "🪂 Descens"
+        return "Descens"
 
     if st.session_state.ha_descendit:
         ultimes_vels = df["vel_calc"].tail(6)
@@ -532,16 +532,16 @@ def obtenir_fase_intelligent(df):
         )
 
         if condicions_aterrat:
-            return "✅ Aterrat"
+            return "Aterrat"
 
-    return "📡 Vol actiu"
+    return "Vol actiu"
 
 
 def moviment_estable():
     return {
-        "mov_x": "⏺ X estable",
-        "mov_y": "⏺ Y estable",
-        "mov_z": "⏺ Altitud estable",
+        "mov_x": "X estable",
+        "mov_y": "Y estable",
+        "mov_z": "Altitud estable",
         "vel_lineal": 0.0,
         "direccio": "sense moviment",
     }
@@ -564,6 +564,7 @@ def calcular_moviment_i_velocitat_lineal(df):
     th_gps = 0.00001
     th_alt = 0.3
 
+    # Mantenim emoticonos només al moviment (com demanat)
     mov_x = "➡️ X: cap a l'est" if delta_lon > th_gps else "⬅️ X: cap a l'oest" if delta_lon < -th_gps else "⏺ X estable"
     mov_y = "⬆️ Y: cap al nord" if delta_lat > th_gps else "⬇️ Y: cap al sud" if delta_lat < -th_gps else "⏺ Y estable"
     mov_z = "🔼 Z: pujant" if delta_alt > th_alt else "🔽 Z: baixant" if delta_alt < -th_alt else "⏺ Altitud estable"
@@ -715,6 +716,8 @@ def renderitzar_mapa():
 
     if st.session_state.map_lat_render is None or st.session_state.map_lon_render is None:
         dist_m = 999999.0
+    elif lat == st.session_state.map_lat_render and lon == st.session_state.map_lon_render:
+        dist_m = 0.0
     else:
         dist_m = distancia_metres(
             st.session_state.map_lat_render,
@@ -764,7 +767,7 @@ def renderitzar_bloc_gps_i_mapa(
     temps_aterratge_txt,
     altura_base,
 ):
-    st.subheader("📍 Posició GPS en temps real")
+    st.subheader("Posició GPS en temps real")
     gps = st.session_state.last_valid_gps
 
     col_info, col_map = st.columns([1, 1.55], gap="large")
@@ -820,7 +823,8 @@ def renderitzar_dashboard():
 
     dada = df.iloc[-1]
     retard = calcular_retard_segons(dada.get("pc_rebut_ts"))
-    df.loc[df.index[-1], "retard_s"] = float(retard) if retard is not None else 0.0
+    retard_s = float(retard) if retard is not None else 0.0
+    df.loc[df.index[-1], "retard_s"] = retard_s
     dada = df.iloc[-1]
     fase = obtenir_fase_intelligent(df)
     vel_vertical = calcular_velocitat_vertical(df)
@@ -837,10 +841,10 @@ def renderitzar_dashboard():
     m1, m2, m3, m4, m5, m6 = st.columns(6)
     m1.metric("Hora", dada["temps_txt"])
     m2.metric("Retard", f"{dada['retard_s']:.0f} s")
-    m3.metric("Altitud pressió", f"{dada['alt_press']:.1f} m")
-    m4.metric("Velocitat enviada", f"{dada['vel']:.2f} m/s")
-    m5.metric("Velocitat vertical", f"{vel_vertical:.2f} m/s")
-    m6.metric("Temps aprox. aterratge", temps_aterratge_txt)
+    m3.metric("Altitud", f"{dada['alt']:.1f} m")
+    m4.metric("Altitud pressió", f"{dada['alt_press']:.1f} m")
+    m5.metric("Velocitat enviada", f"{dada['vel']:.2f} m/s")
+    m6.metric("Velocitat vertical", f"{vel_vertical:.2f} m/s")
 
     m7, m8, m9, m10 = st.columns(4)
     m7.metric("Altura màxima total", f"{altura_maxima_total:.1f} m")
@@ -851,22 +855,14 @@ def renderitzar_dashboard():
     col_estat, col_mov = st.columns(2)
 
     with col_estat:
-        st.subheader("🛰️ Etapa de la missió")
+        st.subheader("Etapa de la missió")
         st.info(fase)
 
         camx = str(dada.get("camX", "center")).strip().lower()
         camy = str(dada.get("camY", "center")).strip().lower()
 
-        cam_map = {
-            "left": ("⬅️", "left"),
-            "right": ("➡️", "right"),
-            "center": ("⏺", "center"),
-            "up": ("⬆️", "up"),
-            "down": ("⬇️", "down"),
-        }
-
-        camx_icon, camx_txt = cam_map.get(camx, ("⏺", "center"))
-        camy_icon, camy_txt = cam_map.get(camy, ("⏺", "center"))
+        camx_txt = camx if camx in {"left", "right", "center"} else "center"
+        camy_txt = camy if camy in {"up", "down", "center"} else "center"
 
         if float(dada["retard_s"]) <= 3:
             st.success(f"Dades en temps real: retard aproximat {dada['retard_s']:.0f} s")
@@ -875,11 +871,11 @@ def renderitzar_dashboard():
         else:
             st.error(f"Retard important: {dada['retard_s']:.0f} s")
 
-        st.info(f"Càmera X: {camx_icon} {camx_txt}")
-        st.info(f"Càmera Y: {camy_icon} {camy_txt}")
+        st.info(f"Càmera X: {camx_txt}")
+        st.info(f"Càmera Y: {camy_txt}")
 
     with col_mov:
-        st.subheader("🧭 Moviment")
+        st.subheader("Moviment")
         st.success(moviment["mov_x"])
         st.info(moviment["mov_y"])
         st.warning(moviment["mov_z"])
@@ -897,7 +893,7 @@ def renderitzar_dashboard():
     )
 
     if len(df) >= 2:
-        st.subheader("📈 Gràfiques principals")
+        st.subheader("Gràfiques principals")
         st.plotly_chart(
             mini_grafic(df, "alt", "Altitud vs Temps"),
             use_container_width=True,
@@ -951,7 +947,7 @@ def renderitzar_dashboard():
                 key="fig_vlin",
             )
 
-    st.subheader("📋 Últimes dades")
+    st.subheader("Últimes dades")
     st.dataframe(df[TAULA_COLUMNS].tail(10), use_container_width=True)
 
 
