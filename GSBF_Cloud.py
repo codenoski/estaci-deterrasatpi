@@ -2,6 +2,7 @@ import base64
 import math
 import time
 from collections import deque
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -23,12 +24,6 @@ SMOOTH_WINDOW = 5
 ASCENS_CONFIRM_POINTS = 4
 ASCENS_THRESHOLD = 0.8
 ASCENS_GAIN_MIN = 3.0
-
-FASE_WINDOW = 10
-FASE_V_UP = 0.8
-FASE_V_DOWN = -0.8
-FASE_LAND_V_ABS = 0.25
-FASE_LAND_ALTURA_MAX = 5.0
 
 MAP_HEIGHT = 650
 MAP_ZOOM = 18
@@ -62,12 +57,17 @@ PLOTLY_CONFIG = {
     "responsive": True,
 }
 
+
 # =========================
 # UI BASE
 # =========================
-st.set_page_config(page_title="Estació de terra SATPI26", layout="wide")
+st.set_page_config(page_title="Estació de terra", layout="wide")
 
+# assets al repo (normalment al costat del script). Fallback si el layout canvia.
 ASSETS_DIR = Path(__file__).parent / "assets"
+if not ASSETS_DIR.exists():
+    ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets"
+
 SATPI_LOGO = ASSETS_DIR / "satpi_logo.png"
 INSTITUT_LOGO = ASSETS_DIR / "institut_logo.png"
 
@@ -77,7 +77,6 @@ def imatge_a_base64(path: Path):
         return base64.b64encode(path.read_bytes()).decode("utf-8")
     except Exception:
         return None
-
 
 st.markdown(
     """
@@ -105,6 +104,7 @@ st.markdown(
         max-width: none;
     }
 
+    /* HEADER */
     .header-shell {
         margin-bottom: 1.1rem;
     }
@@ -188,14 +188,12 @@ st.markdown(
         border-radius: 16px;
         padding: 18px 20px;
         margin-bottom: 14px;
-        color: #f8fafc;
     }
 
     .info-card h3 {
         margin-top: 0;
         margin-bottom: 14px;
         font-size: 1.35rem;
-        color: #ffffff;
     }
 
     .info-grid {
@@ -209,12 +207,6 @@ st.markdown(
         border-bottom: 1px solid rgba(255,255,255,0.05);
         font-size: 1rem;
         line-height: 1.35;
-        color: #e5e7eb;
-    }
-
-    .info-item b {
-        color: #ffffff;
-        font-weight: 700;
     }
 
     .map-wrap {
@@ -222,58 +214,6 @@ st.markdown(
         border: 1px solid rgba(255,255,255,0.08);
         border-radius: 16px;
         padding: 10px;
-    }
-
-    .fase-card {
-        border-radius: 20px;
-        padding: 26px 28px;
-        margin-bottom: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        min-height: 220px;
-        position: relative;
-        overflow: hidden;
-    }
-
-    .fase-icon {
-        font-size: 2.8rem;
-        line-height: 1;
-    }
-
-    .fase-nom {
-        font-size: 2.1rem;
-        font-weight: 800;
-        letter-spacing: -0.02em;
-        line-height: 1.05;
-    }
-
-    .fase-desc {
-        font-size: 1.05rem;
-        opacity: 0.82;
-        line-height: 1.5;
-        margin-top: 4px;
-    }
-
-    .fase-retard {
-        display: inline-flex;
-        align-items: center;
-        gap: 7px;
-        font-size: 0.88rem;
-        font-weight: 600;
-        border-radius: 999px;
-        padding: 5px 14px;
-        margin-top: 6px;
-        align-self: flex-start;
-        letter-spacing: 0.02em;
-    }
-
-    .retard-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        display: inline-block;
-        flex-shrink: 0;
     }
 
     @media (max-width: 1100px) {
@@ -342,6 +282,7 @@ def renderitzar_header():
 
 renderitzar_header()
 
+
 # =========================
 # STATE
 # =========================
@@ -349,14 +290,13 @@ def init_state():
     if "init" in st.session_state:
         return
 
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     st.session_state.init = True
+    st.session_state.session_id = timestamp
     st.session_state.historial = deque(maxlen=MAX_HISTORIAL)
     st.session_state.altura_base = None
     st.session_state.ha_descendit = False
     st.session_state.last_valid_gps = None
-    st.session_state.last_api_temps = None
-    st.session_state.last_api_pc_rebut_ts = None
-    st.session_state.launch_temps = None
 
     st.session_state.map_html_cached = ""
     st.session_state.map_last_render_time = 0.0
@@ -369,9 +309,6 @@ def reset_missio():
     st.session_state.altura_base = None
     st.session_state.ha_descendit = False
     st.session_state.last_valid_gps = None
-    st.session_state.last_api_temps = None
-    st.session_state.last_api_pc_rebut_ts = None
-    st.session_state.launch_temps = None
     st.session_state.map_html_cached = ""
     st.session_state.map_last_render_time = 0.0
     st.session_state.map_lat_render = None
@@ -380,29 +317,26 @@ def reset_missio():
 
 init_state()
 
-# =========================
-# API / TEMPS
-# =========================
-def calcular_retard_segons(pc_rebut_ts):
-    try:
-        pc_rebut_ts = float(pc_rebut_ts)
-    except Exception:
-        return None
-    return max(0.0, time.time() - pc_rebut_ts)
+if not isinstance(st.session_state.historial, deque):
+    st.session_state.historial = deque(st.session_state.historial, maxlen=MAX_HISTORIAL)
 
 
-def llegir_api_cloud():
+# =========================
+# API
+# =========================
+def processar_lectura_api():
     try:
         r = requests.get(f"{API_BASE}/telemetry/latest", timeout=10)
 
         if r.status_code != 200:
-            return None
+            st.warning(f"Backend no disponible: {r.status_code}")
+            return
 
         data = r.json()
         if not data or "temps" not in data:
-            return None
+            return
 
-        return {
+        data = {
             "lat": float(data["lat"]),
             "lon": float(data["lon"]),
             "alt": float(data["alt"]),
@@ -414,44 +348,37 @@ def llegir_api_cloud():
             "temps": float(data["temps"]),
             "camX": str(data.get("camX", "center")),
             "camY": str(data.get("camY", "center")),
-            "pc_rebut_ts": float(data.get("pc_rebut_ts")) if data.get("pc_rebut_ts") is not None else None,
+            "pc_rebut_ts": float(data["pc_rebut_ts"]) if data.get("pc_rebut_ts") is not None else None,
         }
 
+        if st.session_state.historial:
+            ultim_temps = st.session_state.historial[-1]["temps"]
+
+            if data["temps"] == ultim_temps:
+                return
+
+            if data["temps"] < ultim_temps:
+                reset_missio()
+
+        if coords_valides(data["lat"], data["lon"]):
+            st.session_state.last_valid_gps = {
+                "lat": data["lat"],
+                "lon": data["lon"],
+                "temps": data["temps"],
+            }
+
+        st.session_state.historial.append(data)
+
+    except Exception as e:
+        st.warning(f"No s'han pogut llegir dades del backend: {e}")
+
+
+def calcular_retard_segons(pc_rebut_ts):
+    try:
+        pc_rebut_ts = float(pc_rebut_ts)
     except Exception:
         return None
-
-
-def processar_lectura_api():
-    data = llegir_api_cloud()
-    if data is None:
-        return
-
-    pc_ts = data.get("pc_rebut_ts")
-
-    if (
-        st.session_state.last_api_temps is not None
-        and data["temps"] == st.session_state.last_api_temps
-        and pc_ts == st.session_state.last_api_pc_rebut_ts
-    ):
-        return
-
-    if st.session_state.historial and data["temps"] < st.session_state.historial[-1]["temps"]:
-        reset_missio()
-
-    retard = calcular_retard_segons(data.get("pc_rebut_ts"))
-    data["retard_s"] = float(retard) if retard is not None else 0.0
-
-    st.session_state.last_api_temps = data["temps"]
-    st.session_state.last_api_pc_rebut_ts = pc_ts
-
-    if coords_valides(data["lat"], data["lon"]):
-        st.session_state.last_valid_gps = {
-            "lat": data["lat"],
-            "lon": data["lon"],
-            "temps": data["temps"],
-        }
-
-    st.session_state.historial.append(data)
+    return max(0.0, time.time() - pc_rebut_ts)
 
 
 # =========================
@@ -467,7 +394,9 @@ def coords_valides(lat, lon):
 
 
 def metres_per_grau(lat):
-    return 111320.0, 111320.0 * math.cos(math.radians(lat))
+    m_lat = 111320.0
+    m_lon = 111320.0 * math.cos(math.radians(lat))
+    return m_lat, m_lon
 
 
 def distancia_metres(lat1, lon1, lat2, lon2):
@@ -519,8 +448,6 @@ def afegir_variables_altura(df):
         if (ultimes_vels > ASCENS_THRESHOLD).all() and guany_finestra >= ASCENS_GAIN_MIN:
             idx_ref = max(0, len(df) - ASCENS_CONFIRM_POINTS - 1)
             st.session_state.altura_base = float(df.iloc[idx_ref]["alt_suav"])
-            if st.session_state.launch_temps is None:
-                st.session_state.launch_temps = float(df.iloc[idx_ref]["temps"])
 
     if st.session_state.altura_base is None:
         df["altura_guanyada"] = 0.0
@@ -535,14 +462,13 @@ def calcular_velocitat_vertical(df):
     if len(df) < 2:
         return 0.0
 
-    n = min(6, len(df))
-    recent = df.tail(n)
-    dt = recent["temps"].diff()
-    v = (recent["alt_suav"].diff() / dt).replace([np.inf, -np.inf], np.nan).dropna()
-
-    if len(v) == 0:
+    a = df.iloc[-1]
+    b = df.iloc[-2]
+    dt = a["temps"] - b["temps"]
+    if dt <= 0:
         return 0.0
-    return float(v.median())
+
+    return float((a["alt_suav"] - b["alt_suav"]) / dt)
 
 
 def calcular_temps_aprox_aterratge(df, altura_guanyada, fase):
@@ -578,36 +504,35 @@ def format_temps_aprox(segons):
 
 
 def obtenir_fase_intelligent(df):
-    if len(df) < 2:
+    if len(df) < 6 or st.session_state.altura_base is None:
         return "Esperant enlairament"
 
-    dt = df["temps"].diff()
-    v_alt = df["alt_suav"].diff() / dt
-    v_alt = v_alt.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+    diffs_alt = df.tail(6)["alt_suav"].diff().dropna()
+    avg_diff = diffs_alt.mean()
 
-    w = min(FASE_WINDOW, len(df))
-    v_mean = float(v_alt.tail(w).mean())
-    v_abs_mean = float(v_alt.tail(w).abs().mean())
+    altura_guanyada = float(df.iloc[-1]["altura_guanyada"])
 
-    altura_guanyada = float(df.iloc[-1].get("altura_guanyada", 0.0))
-    vel_lineal = float(df.iloc[-1].get("vel_lineal_calc", 0.0))
+    th_estable = 0.25
+    th_ascens = 0.8
+    th_descens = -0.8
 
-    if st.session_state.altura_base is None:
-        if altura_guanyada >= ASCENS_GAIN_MIN and v_mean >= (FASE_V_UP * 0.6):
-            return "Ascens"
-        return "Esperant enlairament"
-
-    if v_mean >= FASE_V_UP:
+    if avg_diff > th_ascens:
         return "Ascens"
 
-    if v_mean <= FASE_V_DOWN:
+    if avg_diff < th_descens:
         st.session_state.ha_descendit = True
         return "Descens"
 
     if st.session_state.ha_descendit:
-        if altura_guanyada <= FASE_LAND_ALTURA_MAX and v_abs_mean <= FASE_LAND_V_ABS and vel_lineal <= 0.5:
+        ultimes_vels = df["vel_calc"].tail(6)
+
+        condicions_aterrat = (
+            altura_guanyada < 3.0 and
+            ultimes_vels.abs().mean() < 0.3
+        )
+
+        if condicions_aterrat:
             return "Aterrat"
-        return "Vol actiu"
 
     return "Vol actiu"
 
@@ -629,7 +554,6 @@ def calcular_moviment_i_velocitat_lineal(df):
     a = df.iloc[-1]
     b = df.iloc[-2]
     dt = a["temps"] - b["temps"]
-
     if dt <= 0:
         return moviment_estable()
 
@@ -640,9 +564,10 @@ def calcular_moviment_i_velocitat_lineal(df):
     th_gps = 0.00001
     th_alt = 0.3
 
-    mov_x = "X: cap a l'est" if delta_lon > th_gps else "X: cap a l'oest" if delta_lon < -th_gps else "X estable"
-    mov_y = "Y: cap al nord" if delta_lat > th_gps else "Y: cap al sud" if delta_lat < -th_gps else "Y estable"
-    mov_z = "Z: pujant" if delta_alt > th_alt else "Z: baixant" if delta_alt < -th_alt else "Altitud estable"
+    # Mantenim emoticonos només al moviment (com demanat)
+    mov_x = "➡️ X: cap a l'est" if delta_lon > th_gps else "⬅️ X: cap a l'oest" if delta_lon < -th_gps else "⏺ X estable"
+    mov_y = "⬆️ Y: cap al nord" if delta_lat > th_gps else "⬇️ Y: cap al sud" if delta_lat < -th_gps else "⏺ Y estable"
+    mov_z = "🔼 Z: pujant" if delta_alt > th_alt else "🔽 Z: baixant" if delta_alt < -th_alt else "⏺ Altitud estable"
 
     if coords_valides(a["lat"], a["lon"]) and coords_valides(b["lat"], b["lon"]):
         m_lat, m_lon = metres_per_grau(a["lat"])
@@ -687,7 +612,7 @@ def mini_grafic(df, y, title):
 
 
 # =========================
-# MAPA
+# MAPA LEAFLET
 # =========================
 def generar_html_mapa_leaflet(lat, lon, zoom=18, height=650):
     return f"""
@@ -718,6 +643,7 @@ def generar_html_mapa_leaflet(lat, lon, zoom=18, height=650):
                 background: #ff3b30;
                 border: 3px solid rgba(255,255,255,0.95);
                 border-radius: 50%;
+                box-shadow: 0 0 0 0 rgba(255, 59, 48, 0.45);
             }}
         </style>
     </head>
@@ -782,16 +708,22 @@ def renderitzar_mapa():
     lat = float(gps["lat"])
     lon = float(gps["lon"])
 
+    if not coords_valides(lat, lon):
+        st.warning("Coordenades invàlides.")
+        return
+
     now = time.time()
 
     if st.session_state.map_lat_render is None or st.session_state.map_lon_render is None:
         dist_m = 999999.0
+    elif lat == st.session_state.map_lat_render and lon == st.session_state.map_lon_render:
+        dist_m = 0.0
     else:
         dist_m = distancia_metres(
             st.session_state.map_lat_render,
             st.session_state.map_lon_render,
             lat,
-            lon,
+            lon
         )
 
     elapsed = now - st.session_state.map_last_render_time
@@ -810,217 +742,20 @@ def renderitzar_mapa():
             lat=lat,
             lon=lon,
             zoom=MAP_ZOOM,
-            height=MAP_HEIGHT,
+            height=MAP_HEIGHT
         )
 
     st.markdown('<div class="map-wrap">', unsafe_allow_html=True)
-    components.html(st.session_state.map_html_cached, height=MAP_HEIGHT, scrolling=False)
+    components.html(
+        st.session_state.map_html_cached,
+        height=MAP_HEIGHT,
+        scrolling=False,
+    )
     st.markdown("</div>", unsafe_allow_html=True)
 
 
 # =========================
-# HTML CARDS
-# =========================
-def _html_card_fase(fase: str, retard_s: float) -> str:
-    _FASES = {
-        "Esperant enlairament": {
-            "icon": "",
-            "bg": "linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",
-            "border": "rgba(100,116,139,0.55)",
-            "glow": "rgba(100,116,139,0.15)",
-            "color": "#94a3b8",
-            "desc": "Sistemes actius. Esperant el moment de l'enlairament.",
-        },
-        "Ascens": {
-            "icon": "",
-            "bg": "linear-gradient(135deg, #052e16 0%, #064e3b 100%)",
-            "border": "rgba(52,211,153,0.7)",
-            "glow": "rgba(52,211,153,0.18)",
-            "color": "#34d399",
-            "desc": "El cohet s'està enlairant. Altitud en augment constant.",
-        },
-        "Vol actiu": {
-            "icon": "",
-            "bg": "linear-gradient(135deg, #0c1a35 0%, #0c2a4a 100%)",
-            "border": "rgba(56,189,248,0.6)",
-            "glow": "rgba(56,189,248,0.15)",
-            "color": "#38bdf8",
-            "desc": "En vol. Monitoritzant posició, alçada i condicions.",
-        },
-        "Descens": {
-            "icon": "🪂",
-            "bg": "linear-gradient(135deg, #2c0a00 0%, #431407 100%)",
-            "border": "rgba(249,115,22,0.7)",
-            "glow": "rgba(249,115,22,0.18)",
-            "color": "#fb923c",
-            "desc": "Descens actiu. Calculant temps d'aterratge.",
-        },
-        "Aterrat": {
-            "icon": "",
-            "bg": "linear-gradient(135deg, #0f172a 0%, #1c1917 100%)",
-            "border": "rgba(168,162,158,0.55)",
-            "glow": "rgba(168,162,158,0.12)",
-            "color": "#a8a29e",
-            "desc": "Missió completada. Cohet recuperat a terra.",
-        },
-    }
-
-    cfg = _FASES.get(fase, _FASES["Vol actiu"])
-
-    if retard_s <= 3:
-        r_dot_color = "#34d399"
-        r_bg = "rgba(52,211,153,0.12)"
-        r_border = "rgba(52,211,153,0.35)"
-        r_text = f"Temps real · retard {retard_s:.0f} s"
-    elif retard_s <= 10:
-        r_dot_color = "#fbbf24"
-        r_bg = "rgba(251,191,36,0.12)"
-        r_border = "rgba(251,191,36,0.35)"
-        r_text = f"Petit retard · {retard_s:.0f} s"
-    else:
-        r_dot_color = "#f87171"
-        r_bg = "rgba(248,113,113,0.12)"
-        r_border = "rgba(248,113,113,0.35)"
-        r_text = f"Retard important · {retard_s:.0f} s"
-
-    return f"""
-<div class="fase-card" style="
-    background: {cfg['bg']};
-    border: 1.5px solid {cfg['border']};
-    box-shadow: 0 0 32px {cfg['glow']}, 0 8px 24px rgba(0,0,0,0.35);
-    color: {cfg['color']};
-">
-    <div style="font-size:0.72rem;font-weight:700;letter-spacing:0.13em;opacity:0.7;text-transform:uppercase;margin-bottom:2px;">
-        ETAPA DE LA MISSIÓ
-    </div>
-    <div class="fase-icon">{cfg['icon']}</div>
-    <div class="fase-nom">{fase}</div>
-    <div class="fase-desc">{cfg['desc']}</div>
-    <div class="fase-retard" style="background:{r_bg};border:1px solid {r_border};color:{r_dot_color};">
-        <span class="retard-dot" style="background:{r_dot_color};
-            box-shadow:0 0 6px {r_dot_color};"></span>
-        {r_text}
-    </div>
-</div>
-"""
-
-
-def _html_card_moviment(
-    moviment: dict,
-    vel_vertical: float,
-    vel_lineal: float,
-    direccio: str,
-    temps_aterratge_txt: str,
-    fase: str,
-) -> str:
-    S_CARD = (
-        "background:rgba(10,23,43,0.82);"
-        "border:1.5px solid rgba(56,189,248,0.22);"
-        "border-radius:20px;"
-        "padding:22px 24px;"
-        "display:flex;"
-        "flex-direction:column;"
-        "gap:14px;"
-        "min-height:220px;"
-        "box-shadow:0 8px 24px rgba(0,0,0,0.3);"
-    )
-    S_LABEL = (
-        "font-size:0.72rem;"
-        "font-weight:700;"
-        "letter-spacing:0.13em;"
-        "color:#64748b;"
-        "text-transform:uppercase;"
-        "margin-bottom:2px;"
-    )
-    S_PRINCIPAL = (
-        "font-size:1.55rem;"
-        "font-weight:800;"
-        "color:#f8fbff;"
-        "line-height:1.2;"
-    )
-    S_FILA = (
-        "display:flex;"
-        "align-items:center;"
-        "gap:12px;"
-        "padding:10px 14px;"
-        "border-radius:12px;"
-        "background:rgba(255,255,255,0.04);"
-        "border:1px solid rgba(255,255,255,0.07);"
-    )
-    S_ICON = "font-size:1.35rem;flex-shrink:0;"
-    S_TEXT = "font-size:0.97rem;color:#cbd5e1;line-height:1.35;flex:1;"
-    S_VEL = "font-size:1.05rem;font-weight:800;color:#f1f5f9;flex-shrink:0;"
-
-    if vel_vertical > 0.5:
-        vert_icon = ""
-        vert_color = "#34d399"
-        vert_word = "PUJANT"
-        vert_desc = "pujant"
-    elif vel_vertical < -0.5:
-        vert_icon = ""
-        vert_color = "#fb923c"
-        vert_word = "BAIXANT"
-        vert_desc = "baixant"
-    else:
-        vert_icon = ""
-        vert_color = "#94a3b8"
-        vert_word = "ALTITUD ESTABLE"
-        vert_desc = "estable"
-
-    if vert_word != "ALTITUD ESTABLE":
-        vert_principal = (
-            f"El cohet està "
-            f"<span style='color:{vert_color};font-weight:900;'>{vert_word}</span>"
-            f" a <span style='color:#38bdf8;font-weight:900;'>{abs(vel_vertical):.1f} m/s</span>"
-        )
-    else:
-        vert_principal = f"El cohet està <span style='color:#94a3b8;font-weight:900;'>ALTITUD ESTABLE</span>"
-
-    dir_clean = direccio.upper() if direccio != "sense moviment" else "SENSE MOVIMENT"
-
-    if vel_lineal > 0.3:
-        horit_label = f"Cap al <strong style='color:#f1f5f9;'>{dir_clean}</strong>"
-    else:
-        horit_label = "<strong style='color:#94a3b8;'>Sense desplaçament horitzontal</strong>"
-
-    vel_3d = (vel_vertical ** 2 + vel_lineal ** 2) ** 0.5
-
-    land_fila = ""
-    if fase == "Descens" and temps_aterratge_txt != "-":
-        land_fila = (
-            f'<div style="{S_FILA}">'
-            f'<span style="{S_ICON}"></span>'
-            f'<span style="{S_TEXT}">Temps aprox. d\'aterratge</span>'
-            f'<span style="{S_VEL}color:#fb923c;">{temps_aterratge_txt}</span>'
-            f'</div>'
-        )
-
-    return (
-        f'<div style="{S_CARD}">'
-        f'<div style="{S_LABEL}">MOVIMENT</div>'
-        f'<div style="{S_PRINCIPAL}">{vert_principal}</div>'
-        f'<div style="{S_FILA}">'
-        f'  <span style="{S_ICON}">{vert_icon}</span>'
-        f'  <span style="{S_TEXT}"><strong style="color:#f1f5f9;">Velocitat vertical</strong> · {vert_desc}</span>'
-        f'  <span style="{S_VEL}color:{vert_color};">{vel_vertical:+.2f} m/s</span>'
-        f'</div>'
-        f'<div style="{S_FILA}">'
-        f'  <span style="{S_ICON}"></span>'
-        f'  <span style="{S_TEXT}">{horit_label}</span>'
-        f'  <span style="{S_VEL}color:#38bdf8;">{vel_lineal:.2f} m/s</span>'
-        f'</div>'
-        f'<div style="{S_FILA}">'
-        f'  <span style="{S_ICON}"></span>'
-        f'  <span style="{S_TEXT}"><strong style="color:#f1f5f9;">Velocitat total</strong> (3D)</span>'
-        f'  <span style="{S_VEL}color:#e2e8f0;">{vel_3d:.2f} m/s</span>'
-        f'</div>'
-        f'{land_fila}'
-        f'</div>'
-    )
-
-
-# =========================
-# RENDER MAPA I INFO
+# RENDER
 # =========================
 def renderitzar_bloc_gps_i_mapa(
     dada,
@@ -1033,8 +768,8 @@ def renderitzar_bloc_gps_i_mapa(
     altura_base,
 ):
     st.subheader("Posició GPS en temps real")
-
     gps = st.session_state.last_valid_gps
+
     col_info, col_map = st.columns([1, 1.55], gap="large")
 
     with col_info:
@@ -1046,21 +781,21 @@ def renderitzar_bloc_gps_i_mapa(
                 <h3>Posició actual</h3>
                 <div class="info-grid">
                     <div class="info-item"><b>Hora:</b> {dada['temps_txt']}</div>
-                    <div class="info-item"><b>Retard:</b> {dada['retard_s']:.0f} s</div>
+                    <div class="info-item"><b>Temps (s):</b> {dada['temps']:.1f}</div>
                     <div class="info-item"><b>Latitud:</b> {gps['lat']:.6f}</div>
                     <div class="info-item"><b>Longitud:</b> {gps['lon']:.6f}</div>
                     <div class="info-item"><b>Etapa:</b> {fase}</div>
-                    <div class="info-item"><b>Altitud:</b> {dada['alt']:.1f} m</div>
+                    <div class="info-item"><b>Altitud absoluta:</b> {dada['alt']:.1f} m</div>
                     <div class="info-item"><b>Altitud per pressió:</b> {dada['alt_press']:.1f} m</div>
                     <div class="info-item"><b>Altura guanyada:</b> {altura_guanyada:.1f} m</div>
-                    <div class="info-item"><b>Altura màxima:</b> {altura_maxima_total:.1f} m</div>
+                    <div class="info-item"><b>Altura màxima total:</b> {altura_maxima_total:.1f} m</div>
                     <div class="info-item"><b>Velocitat enviada:</b> {dada['vel']:.2f} m/s</div>
                     <div class="info-item"><b>Velocitat lineal:</b> {vel_lineal:.2f} m/s</div>
                     <div class="info-item"><b>Direcció:</b> {direccio_lineal}</div>
                     <div class="info-item"><b>Temperatura:</b> {dada['temp']:.1f} °C</div>
                     <div class="info-item"><b>Pressió:</b> {dada['press']:.1f} hPa</div>
-                    <div class="info-item"><b>Temps aterratge:</b> {temps_aterratge_txt}</div>
-                    <div class="info-item"><b>Altura llançament:</b> {"pendent" if altura_base is None else f"{altura_base:.1f} m"}</div>
+                    <div class="info-item"><b>Temps aprox. aterratge:</b> {temps_aterratge_txt}</div>
+                    <div class="info-item"><b>Altura de llançament:</b> {"pendent" if altura_base is None else f"{altura_base:.1f} m"}</div>
                 </div>
             </div>
             """
@@ -1070,153 +805,26 @@ def renderitzar_bloc_gps_i_mapa(
         renderitzar_mapa()
 
 
-# =========================
-# CARDS SUPERIORS
-# =========================
-_CARD = (
-    "background:rgba(8,18,36,0.72);"
-    "border:1px solid rgba(86,142,255,0.15);"
-    "border-radius:18px;"
-    "padding:20px 24px;"
-    "backdrop-filter:blur(8px);"
-    "-webkit-backdrop-filter:blur(8px);"
-    "box-shadow:0 4px 28px rgba(0,0,0,0.30),inset 0 1px 0 rgba(255,255,255,0.04);"
-    "height:100%;"
-    "box-sizing:border-box;"
-)
-
-
-def _sec(title: str) -> str:
-    return (
-        f'<div style="font-size:0.65rem;font-weight:700;letter-spacing:0.14em;'
-        f'color:#334155;text-transform:uppercase;'
-        f'border-top:1px solid rgba(255,255,255,0.07);'
-        f'padding-top:12px;margin-top:6px;margin-bottom:10px;">{title}</div>'
-    )
-
-
-def _m(label: str, value: str, color: str = "#f1f5f9", size: str = "1.8rem") -> str:
-    return (
-        f'<div style="margin-bottom:14px;">'
-        f'<div style="font-size:0.67rem;font-weight:700;letter-spacing:0.11em;'
-        f'color:#475569;text-transform:uppercase;margin-bottom:3px;">{label}</div>'
-        f'<div style="font-size:{size};font-weight:700;color:{color};'
-        f'line-height:1.05;letter-spacing:-0.01em;">{value}</div>'
-        f'</div>'
-    )
-
-
-def _m2(items: list) -> str:
-    cols = "".join(
-        f'<div>{_m(lbl, val, col)}</div>'
-        for lbl, val, col in items
-    )
-    return (
-        f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 20px;">'
-        f'{cols}</div>'
-    )
-
-
-def _m4(items: list) -> str:
-    cols = "".join(
-        f'<div>{_m(lbl, val, col)}</div>'
-        for lbl, val, col in items
-    )
-    return (
-        f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:0 16px;">'
-        f'{cols}</div>'
-    )
-
-
-def _vel_color(v: float) -> str:
-    if v > 0.5:
-        return "#34d399"
-    if v < -0.5:
-        return "#fb923c"
-    return "#94a3b8"
-
-
-def _html_card_left(hora_txt: str, retard_s: float, estat_txt: str) -> str:
-    estat_color = "#34d399" if estat_txt == "OK" else "#fbbf24" if estat_txt == "RETARD" else "#f87171"
-    retard_color = "#34d399" if retard_s <= 3 else "#fbbf24" if retard_s <= 10 else "#f87171"
-    return (
-        f'<div style="{_CARD}">'
-        f'{_m("Hora de missió", hora_txt, "#f8fbff", "2rem")}'
-        f'{_sec("COMUNICACIÓ")}'
-        f'{_m("Retard", f"{retard_s:.0f} s", retard_color)}'
-        f'{_sec("ESTAT")}'
-        f'{_m("Sistema", estat_txt, estat_color)}'
-        f'</div>'
-    )
-
-
-def _html_card_mid(
-    alt: float, alt_max: float, h_guanyada: float, alt_press: float,
-    temp: float, press: float, temps_aterr: str,
-) -> str:
-    return (
-        f'<div style="{_CARD}">'
-        f'<div style="font-size:0.65rem;font-weight:700;letter-spacing:0.14em;'
-        f'color:#334155;text-transform:uppercase;margin-bottom:10px;">POSICIO I ALTITUD</div>'
-        + _m4([
-            ("Altitud actual", f"{alt:.1f} m", "#38bdf8"),
-            ("Altitud maxima", f"{alt_max:.1f} m", "#f1f5f9"),
-            ("Altura guanyada", f"{h_guanyada:.1f} m", "#f1f5f9"),
-            ("Altitud pressio", f"{alt_press:.1f} m", "#94a3b8"),
-        ])
-        + _sec("CONDICIONS AMBIENTALS")
-        + _m2([
-            ("Temperatura", f"{temp:.1f} °C", "#f1f5f9"),
-            ("Pressio", f"{press:.1f} hPa", "#f1f5f9"),
-        ])
-        + _sec("TEMPS APROX. ATERRATGE")
-        + _m("Aterratge estimat", temps_aterr, "#fb923c" if temps_aterr != "-" else "#475569")
-        + f'</div>'
-    )
-
-
-def _html_card_right(
-    vel_env: float, vel_vert: float, vel_lin: float, met_txt: str,
-) -> str:
-    return (
-        f'<div style="{_CARD}">'
-        f'<div style="font-size:0.65rem;font-weight:700;letter-spacing:0.14em;'
-        f'color:#334155;text-transform:uppercase;margin-bottom:10px;">VELOCITAT</div>'
-        + _m2([
-            ("Enviada", f"{vel_env:.2f} m/s", "#f1f5f9"),
-            ("Vertical", f"{vel_vert:+.2f} m/s", _vel_color(vel_vert)),
-        ])
-        + _m("Lineal (horitzontal)", f"{vel_lin:.2f} m/s", "#38bdf8")
-        + _sec("T+ MISSIO")
-        + _m(
-            "MET · Mission Elapsed Time",
-            met_txt,
-            "#a78bfa",
-            "2rem",
-        )
-        + f'</div>'
-    )
-
-
-# =========================
-# RENDER DASHBOARD
-# =========================
 def renderitzar_dashboard():
     if not st.session_state.historial:
         st.write("Encara no hi ha dades")
         return
 
     df = pd.DataFrame(st.session_state.historial)
-
     if "camX" not in df.columns:
-        df["camX"] = "center"
+        df["camX"] = "0"
     if "camY" not in df.columns:
-        df["camY"] = "center"
+        df["camY"] = "0"
     if "pc_rebut_ts" not in df.columns:
         df["pc_rebut_ts"] = np.nan
-
+    if "retard_s" not in df.columns:
+        df["retard_s"] = 0.0
     df, altura_base = afegir_variables_altura(df)
 
+    dada = df.iloc[-1]
+    retard = calcular_retard_segons(dada.get("pc_rebut_ts"))
+    retard_s = float(retard) if retard is not None else 0.0
+    df.loc[df.index[-1], "retard_s"] = retard_s
     dada = df.iloc[-1]
     fase = obtenir_fase_intelligent(df)
     vel_vertical = calcular_velocitat_vertical(df)
@@ -1230,58 +838,51 @@ def renderitzar_dashboard():
     temps_aterratge_s = calcular_temps_aprox_aterratge(df, altura_guanyada, fase)
     temps_aterratge_txt = format_temps_aprox(temps_aterratge_s)
 
-    if st.session_state.get("launch_temps") is not None:
-        met_s = max(0, int(float(dada["temps"]) - st.session_state.launch_temps))
-        h, rem = divmod(met_s, 3600)
-        m_t, s_t = divmod(rem, 60)
-        met_txt = f"{h:02d}:{m_t:02d}:{s_t:02d}"
-    else:
-        met_txt = "–"
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
+    m1.metric("Hora", dada["temps_txt"])
+    m2.metric("Retard", f"{dada['retard_s']:.0f} s")
+    m3.metric("Altitud", f"{dada['alt']:.1f} m")
+    m4.metric("Altitud pressió", f"{dada['alt_press']:.1f} m")
+    m5.metric("Velocitat enviada", f"{dada['vel']:.2f} m/s")
+    m6.metric("Velocitat vertical", f"{vel_vertical:.2f} m/s")
 
-    estat_txt = "OK" if float(dada["retard_s"]) <= 3 else "RETARD" if float(dada["retard_s"]) <= 10 else "NO OK"
+    m7, m8, m9, m10 = st.columns(4)
+    m7.metric("Altura màxima total", f"{altura_maxima_total:.1f} m")
+    m8.metric("Altura guanyada", f"{altura_guanyada:.1f} m")
+    m9.metric("Temperatura", f"{dada['temp']:.1f} °C")
+    m10.metric("Pressió", f"{dada['press']:.1f} hPa")
 
-    col_left, col_mid, col_right = st.columns([1.05, 3.4, 2.1], gap="large")
-
-    with col_left:
-        st.markdown(_html_card_left(dada["temps_txt"], float(dada["retard_s"]), estat_txt), unsafe_allow_html=True)
-
-    with col_mid:
-        st.markdown(
-            _html_card_mid(
-                float(dada["alt"]),
-                altura_maxima_total,
-                altura_guanyada,
-                float(dada["alt_press"]),
-                float(dada["temp"]),
-                float(dada["press"]),
-                temps_aterratge_txt,
-            ),
-            unsafe_allow_html=True,
-        )
-
-    with col_right:
-        st.markdown(
-            _html_card_right(float(dada["vel"]), vel_vertical, vel_lineal, met_txt),
-            unsafe_allow_html=True,
-        )
+    # Mostra també com a mètrica (a dalt), sense treure res de la UI
+    st.metric("Temps aprox. aterratge", temps_aterratge_txt)
 
     col_estat, col_mov = st.columns(2)
 
     with col_estat:
-        st.markdown(_html_card_fase(fase, float(dada["retard_s"])), unsafe_allow_html=True)
+        st.subheader("Etapa de la missió")
+        st.info(fase)
+
+        camx = str(dada.get("camX", "center")).strip().lower()
+        camy = str(dada.get("camY", "center")).strip().lower()
+
+        camx_txt = camx if camx in {"left", "right", "center"} else "center"
+        camy_txt = camy if camy in {"up", "down", "center"} else "center"
+
+        if float(dada["retard_s"]) <= 3:
+            st.success(f"Dades en temps real: retard aproximat {dada['retard_s']:.0f} s")
+        elif float(dada["retard_s"]) <= 10:
+            st.warning(f"Petit retard: {dada['retard_s']:.0f} s")
+        else:
+            st.error(f"Retard important: {dada['retard_s']:.0f} s")
+
+        st.info(f"Càmera X: {camx_txt}")
+        st.info(f"Càmera Y: {camy_txt}")
 
     with col_mov:
-        st.markdown(
-            _html_card_moviment(
-                moviment,
-                vel_vertical,
-                vel_lineal,
-                direccio_lineal,
-                temps_aterratge_txt,
-                fase,
-            ),
-            unsafe_allow_html=True,
-        )
+        st.subheader("Moviment")
+        st.success(moviment["mov_x"])
+        st.info(moviment["mov_y"])
+        st.warning(moviment["mov_z"])
+        st.info(f"➡️ Velocitat lineal: {vel_lineal:.2f} m/s cap a {direccio_lineal}")
 
     renderitzar_bloc_gps_i_mapa(
         dada=dada,
@@ -1300,6 +901,7 @@ def renderitzar_dashboard():
             mini_grafic(df, "alt", "Altitud vs Temps"),
             use_container_width=True,
             config=PLOTLY_CONFIG,
+            key="fig_alt",
         )
 
         a1, a2, a3 = st.columns(3)
@@ -1308,18 +910,21 @@ def renderitzar_dashboard():
                 mini_grafic(df, "alt_press", "Altitud per pressió"),
                 use_container_width=True,
                 config=PLOTLY_CONFIG,
+                key="fig_alt_press",
             )
         with a2:
             st.plotly_chart(
                 mini_grafic(df, "temp", "Temperatura"),
                 use_container_width=True,
                 config=PLOTLY_CONFIG,
+                key="fig_temp",
             )
         with a3:
             st.plotly_chart(
                 mini_grafic(df, "press", "Pressió"),
                 use_container_width=True,
                 config=PLOTLY_CONFIG,
+                key="fig_press",
             )
 
         b1, b2, b3 = st.columns(3)
@@ -1328,18 +933,21 @@ def renderitzar_dashboard():
                 mini_grafic(df, "vel", "Velocitat enviada"),
                 use_container_width=True,
                 config=PLOTLY_CONFIG,
+                key="fig_vel_real",
             )
         with b2:
             st.plotly_chart(
                 mini_grafic(df, "vel_calc", "Velocitat vertical calculada"),
                 use_container_width=True,
                 config=PLOTLY_CONFIG,
+                key="fig_vel_calc",
             )
         with b3:
             st.plotly_chart(
                 mini_grafic(df, "vel_lineal_calc", "Velocitat lineal"),
                 use_container_width=True,
                 config=PLOTLY_CONFIG,
+                key="fig_vlin",
             )
 
     st.subheader("Últimes dades")
@@ -1363,3 +971,4 @@ else:
     renderitzar_dashboard()
     time.sleep(REFRESH_SECONDS)
     st.rerun()
+
